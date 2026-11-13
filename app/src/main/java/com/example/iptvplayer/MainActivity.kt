@@ -9,9 +9,11 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -24,18 +26,23 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import java.net.URL
 
-data class Channel(val name: String, val url: String)
+data class Channel(val name: String, val url: String, val group: String)
+
+val groupRegex = Regex("group-title=\"([^\"]*)\"")
 
 fun parseM3u(text: String): List<Channel> {
     val list = mutableListOf<Channel>()
     var name: String? = null
+    var group = ""
     for (raw in text.lines()) {
         val line = raw.trim()
         if (line.startsWith("#EXTINF")) {
             name = line.substringAfterLast(",").trim()
+            group = groupRegex.find(line)?.groupValues?.get(1)?.trim() ?: ""
         } else if (line.isNotEmpty() && !line.startsWith("#")) {
-            list.add(Channel(if (name.isNullOrBlank()) line else name, line))
+            list.add(Channel(if (name.isNullOrBlank()) line else name, line, group))
             name = null
+            group = ""
         }
     }
     return list
@@ -50,6 +57,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun IptvApp() {
     val context = LocalContext.current
@@ -64,6 +72,16 @@ fun IptvApp() {
     var status by remember { mutableStateOf("") }
     var query by remember { mutableStateOf("") }
     var fullscreen by remember { mutableStateOf(false) }
+    var group by remember { mutableStateOf("All") }
+    var favs by remember {
+        mutableStateOf((prefs.getStringSet("favs", emptySet()) ?: emptySet()).toSet())
+    }
+
+    fun toggleFav(url: String) {
+        val updated = if (url in favs) favs - url else favs + url
+        favs = updated
+        prefs.edit().putStringSet("favs", updated.toSet()).apply()
+    }
 
     fun loadLink() {
         val url = link.trim()
@@ -120,7 +138,17 @@ fun IptvApp() {
         return
     }
 
-    val filtered = channels.filter { it.name.contains(query, ignoreCase = true) }
+    val groups = listOf("All", "Favorites") +
+        channels.map { it.group }.filter { it.isNotBlank() }.distinct().sorted()
+
+    val filtered = channels.filter { ch ->
+        val inGroup = when (group) {
+            "All" -> true
+            "Favorites" -> ch.url in favs
+            else -> ch.group == group
+        }
+        inGroup && ch.name.contains(query, ignoreCase = true)
+    }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(8.dp)) {
         if (selected != null) {
@@ -159,15 +187,32 @@ fun IptvApp() {
             modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
         )
 
+        LazyRow(Modifier.padding(bottom = 8.dp)) {
+            items(groups) { g ->
+                FilterChip(
+                    selected = group == g,
+                    onClick = { group = g },
+                    label = { Text(if (g == "Favorites") "★ Favorites" else g) },
+                    modifier = Modifier.padding(end = 6.dp)
+                )
+            }
+        }
+
         LazyColumn {
             items(filtered) { ch ->
-                Text(
-                    ch.name,
+                Row(
                     Modifier
                         .fillMaxWidth()
                         .clickable { selected = ch }
-                        .padding(12.dp)
-                )
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(ch.name, Modifier.weight(1f).padding(6.dp))
+                    Text(
+                        if (ch.url in favs) "★" else "☆",
+                        Modifier.clickable { toggleFav(ch.url) }.padding(12.dp)
+                    )
+                }
                 HorizontalDivider()
             }
         }
