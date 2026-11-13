@@ -15,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -24,25 +25,35 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import coil.compose.AsyncImage
 import java.net.URL
 
-data class Channel(val name: String, val url: String, val group: String)
+data class Channel(
+    val name: String,
+    val url: String,
+    val group: String,
+    val logo: String
+)
 
 val groupRegex = Regex("group-title=\"([^\"]*)\"")
+val logoRegex = Regex("tvg-logo=\"([^\"]*)\"")
 
 fun parseM3u(text: String): List<Channel> {
     val list = mutableListOf<Channel>()
     var name: String? = null
     var group = ""
+    var logo = ""
     for (raw in text.lines()) {
         val line = raw.trim()
         if (line.startsWith("#EXTINF")) {
             name = line.substringAfterLast(",").trim()
             group = groupRegex.find(line)?.groupValues?.get(1)?.trim() ?: ""
+            logo = logoRegex.find(line)?.groupValues?.get(1)?.trim() ?: ""
         } else if (line.isNotEmpty() && !line.startsWith("#")) {
-            list.add(Channel(if (name.isNullOrBlank()) line else name, line, group))
+            list.add(Channel(if (name.isNullOrBlank()) line else name, line, group, logo))
             name = null
             group = ""
+            logo = ""
         }
     }
     return list
@@ -207,6 +218,16 @@ fun IptvApp() {
                         .padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (ch.logo.isNotBlank()) {
+                        AsyncImage(
+                            model = ch.logo,
+                            contentDescription = ch.name,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.size(48.dp).padding(end = 8.dp)
+                        )
+                    } else {
+                        Spacer(Modifier.size(48.dp))
+                    }
                     Text(ch.name, Modifier.weight(1f).padding(6.dp))
                     Text(
                         if (ch.url in favs) "★" else "☆",
