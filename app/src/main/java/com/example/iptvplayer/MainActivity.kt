@@ -31,6 +31,8 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
@@ -89,8 +91,31 @@ fun IptvApp() {
     val recDir = remember {
         (context.getExternalFilesDir("Recordings") ?: context.filesDir).also { it.mkdirs() }
     }
+
+    var buffering by remember { mutableStateOf(false) }
+    var playError by remember { mutableStateOf<String?>(null) }
+    var retryCount by remember { mutableStateOf(0) }
+
     DisposableEffect(Unit) {
-        onDispose { player.release() }
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                buffering = state == Player.STATE_BUFFERING
+                if (state == Player.STATE_READY) {
+                    playError = null
+                    retryCount = 0
+                }
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                playError = "Stream error: ${error.errorCodeName}"
+                retryCount++
+            }
+        }
+        player.addListener(listener)
+        onDispose {
+            player.removeListener(listener)
+            player.release()
+        }
     }
 
     val permLauncher = rememberLauncherForActivityResult(
@@ -179,6 +204,15 @@ fun IptvApp() {
         selected = Channel(f.name, Uri.fromFile(f).toString(), "", "")
     }
 
+    fun retryNow() {
+        val ch = selected ?: return
+        playError = null
+        retryCount = 0
+        player.setMediaItem(MediaItem.fromUri(ch.url))
+        player.prepare()
+        player.playWhenReady = true
+    }
+
     LaunchedEffect(Unit) { loadLink() }
 
     LaunchedEffect(recording, tab) { refreshRecs() }
@@ -193,7 +227,17 @@ fun IptvApp() {
 
     LaunchedEffect(selected) {
         selected?.let {
+            playError = null
+            retryCount = 0
             player.setMediaItem(MediaItem.fromUri(it.url))
+            player.prepare()
+            player.playWhenReady = true
+        }
+    }
+
+    LaunchedEffect(retryCount) {
+        if (playError != null && retryCount in 1..3) {
+            delay(3000)
             player.prepare()
             player.playWhenReady = true
         }
@@ -239,12 +283,22 @@ fun IptvApp() {
         "⏺ Rec"
     }
 
+    val errorText = when {
+        playError == null -> null
+        retryCount in 1..3 -> "Dobara koshish ($retryCount/3)..."
+        else -> "Stream nahi chal raha"
+    }
+    val showRetryButton = playError != null && retryCount > 3
+
     if (fullscreen && selected != null) {
         Box(Modifier.fillMaxSize()) {
             AndroidView(
                 factory = { PlayerView(it).apply { this.player = player } },
                 modifier = Modifier.fillMaxSize()
             )
+            if (buffering) {
+                CircularProgressIndicator(Modifier.align(Alignment.Center))
+            }
             Row(
                 Modifier.padding(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -254,17 +308,48 @@ fun IptvApp() {
                 Button(onClick = { move(1) }) { Text("⏭") }
                 Button(onClick = { toggleRecord() }) { Text(recLabel) }
             }
+            if (errorText != null) {
+                Row(
+                    Modifier.align(Alignment.BottomCenter).padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(errorText)
+                    if (showRetryButton) {
+                        Button(onClick = { retryNow() }) { Text("Retry") }
+                    }
+                }
+            }
         }
         return
     }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(8.dp)) {
         if (selected != null) {
-            AndroidView(
-                factory = { PlayerView(it).apply { this.player = player } },
-                modifier = Modifier.fillMaxWidth().height(220.dp)
-            )
+            Box(Modifier.fillMaxWidth().height(220.dp)) {
+                AndroidView(
+                    factory = { PlayerView(it).apply { this.player = player } },
+                    modifier = Modifier.fillMaxSize()
+                )
+                if (buffering) {
+                    CircularProgressIndicator(Modifier.align(Alignment.Center))
+                }
+            }
             Text(selected!!.name, Modifier.padding(vertical = 4.dp))
+            if (errorText != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(errorText)
+                    if (showRetryButton) {
+                        Button(
+                            onClick = { retryNow() },
+                            contentPadding = PaddingValues(horizontal = 12.dp)
+                        ) { Text("Retry") }
+                    }
+                }
+            }
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
