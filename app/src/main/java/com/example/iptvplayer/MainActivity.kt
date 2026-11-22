@@ -26,6 +26,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
+import kotlinx.coroutines.delay
 import java.net.URL
 
 data class Channel(
@@ -75,7 +76,13 @@ fun IptvApp() {
     val activity = context as ComponentActivity
     val prefs = remember { context.getSharedPreferences("iptv", Context.MODE_PRIVATE) }
     val player = remember { ExoPlayer.Builder(context).build() }
-    DisposableEffect(Unit) { onDispose { player.release() } }
+    val recorder = remember { Recorder() }
+    DisposableEffect(Unit) {
+        onDispose {
+            recorder.stop()
+            player.release()
+        }
+    }
 
     var link by remember { mutableStateOf(prefs.getString("link", "") ?: "") }
     var channels by remember { mutableStateOf(listOf<Channel>()) }
@@ -84,6 +91,9 @@ fun IptvApp() {
     var query by remember { mutableStateOf("") }
     var fullscreen by remember { mutableStateOf(false) }
     var group by remember { mutableStateOf("All") }
+    var recording by remember { mutableStateOf(false) }
+    var recSeconds by remember { mutableStateOf(0) }
+    var recName by remember { mutableStateOf("") }
     var favs by remember {
         mutableStateOf((prefs.getStringSet("favs", emptySet()) ?: emptySet()).toSet())
     }
@@ -110,7 +120,37 @@ fun IptvApp() {
         }.start()
     }
 
+    fun toggleRecord() {
+        val ch = selected ?: return
+        if (recording) {
+            recorder.stop()
+            return
+        }
+        val dir = context.getExternalFilesDir("Recordings") ?: context.filesDir
+        dir.mkdirs()
+        val safe = ch.name.replace(Regex("[^A-Za-z0-9]+"), "_").take(30)
+        val file = java.io.File(dir, "${safe}_${System.currentTimeMillis()}.ts")
+        recName = ch.name
+        recording = true
+        recorder.start(ch.url, file) { error ->
+            recording = false
+            status = if (error == null) {
+                "Saved: ${file.name}"
+            } else {
+                "Recording error: $error"
+            }
+        }
+    }
+
     LaunchedEffect(Unit) { loadLink() }
+
+    LaunchedEffect(recording) {
+        recSeconds = 0
+        while (recording) {
+            delay(1000)
+            recSeconds++
+        }
+    }
 
     LaunchedEffect(selected) {
         selected?.let {
@@ -135,20 +175,6 @@ fun IptvApp() {
 
     BackHandler(enabled = fullscreen) { fullscreen = false }
 
-    if (fullscreen && selected != null) {
-        Box(Modifier.fillMaxSize()) {
-            AndroidView(
-                factory = { PlayerView(it).apply { this.player = player } },
-                modifier = Modifier.fillMaxSize()
-            )
-            Button(
-                onClick = { fullscreen = false },
-                modifier = Modifier.padding(16.dp)
-            ) { Text("Exit fullscreen") }
-        }
-        return
-    }
-
     val groups = listOf("All", "Favorites") +
         channels.map { it.group }.filter { it.isNotBlank() }.distinct().sorted()
 
@@ -161,18 +187,68 @@ fun IptvApp() {
         inGroup && ch.name.contains(query, ignoreCase = true)
     }
 
+    fun move(delta: Int) {
+        if (filtered.isEmpty()) return
+        val i = filtered.indexOfFirst { it.url == selected?.url }
+        val n = if (i < 0) 0 else (i + delta + filtered.size) % filtered.size
+        selected = filtered[n]
+    }
+
+    val recLabel = if (recording) {
+        "⏹ %02d:%02d".format(recSeconds / 60, recSeconds % 60)
+    } else {
+        "⏺ Rec"
+    }
+
+    if (fullscreen && selected != null) {
+        Box(Modifier.fillMaxSize()) {
+            AndroidView(
+                factory = { PlayerView(it).apply { this.player = player } },
+                modifier = Modifier.fillMaxSize()
+            )
+            Row(
+                Modifier.padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(onClick = { fullscreen = false }) { Text("Exit") }
+                Button(onClick = { move(-1) }) { Text("⏮") }
+                Button(onClick = { move(1) }) { Text("⏭") }
+                Button(onClick = { toggleRecord() }) { Text(recLabel) }
+            }
+        }
+        return
+    }
+
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(8.dp)) {
         if (selected != null) {
             AndroidView(
                 factory = { PlayerView(it).apply { this.player = player } },
                 modifier = Modifier.fillMaxWidth().height(220.dp)
             )
+            Text(selected!!.name, Modifier.padding(vertical = 4.dp))
             Row(
-                Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Text(selected!!.name, Modifier.weight(1f).padding(top = 12.dp))
-                Button(onClick = { fullscreen = true }) { Text("Fullscreen") }
+                Button(
+                    onClick = { move(-1) },
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) { Text("⏮") }
+                Button(
+                    onClick = { toggleRecord() },
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) { Text(recLabel) }
+                Button(
+                    onClick = { move(1) },
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) { Text("⏭") }
+                Button(
+                    onClick = { fullscreen = true },
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) { Text("Full") }
+            }
+            if (recording) {
+                Text("Recording: $recName")
             }
         }
 
