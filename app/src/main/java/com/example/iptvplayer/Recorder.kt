@@ -57,6 +57,24 @@ class Recorder {
         c.disconnect()
     }
 
+    private fun lowestVariant(lines: List<String>): String? {
+        var best: String? = null
+        var bestBw = Long.MAX_VALUE
+        for (i in lines.indices) {
+            if (lines[i].startsWith("#EXT-X-STREAM-INF")) {
+                val bw = Regex("BANDWIDTH=(\\d+)").find(lines[i])
+                    ?.groupValues?.get(1)?.toLongOrNull() ?: Long.MAX_VALUE
+                val u = lines.drop(i + 1)
+                    .firstOrNull { it.isNotEmpty() && !it.startsWith("#") }
+                if (u != null && (best == null || bw < bestBw)) {
+                    best = u
+                    bestBw = bw
+                }
+            }
+        }
+        return best
+    }
+
     private fun recordHls(startUrl: String, out: FileOutputStream) {
         var playlistUrl = startUrl
         val seen = HashSet<String>()
@@ -64,11 +82,8 @@ class Recorder {
             val text = open(playlistUrl).inputStream.bufferedReader().use { it.readText() }
             val lines = text.lines().map { it.trim() }
 
-            val variantIndex = lines.indexOfFirst { it.startsWith("#EXT-X-STREAM-INF") }
-            if (variantIndex >= 0) {
-                val next = lines.drop(variantIndex + 1)
-                    .firstOrNull { it.isNotEmpty() && !it.startsWith("#") }
-                    ?: throw Exception("Stream variant nahi mila")
+            if (lines.any { it.startsWith("#EXT-X-STREAM-INF") }) {
+                val next = lowestVariant(lines) ?: throw Exception("Stream variant nahi mila")
                 playlistUrl = URI(playlistUrl).resolve(next).toString()
                 continue
             }
