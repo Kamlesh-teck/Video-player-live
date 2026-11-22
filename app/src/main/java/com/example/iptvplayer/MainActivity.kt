@@ -1,11 +1,18 @@
 package com.example.iptvplayer
 
+import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,6 +26,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -27,6 +35,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
+import java.io.File
 import java.net.URL
 
 data class Channel(
@@ -77,12 +86,16 @@ fun IptvApp() {
     val prefs = remember { context.getSharedPreferences("iptv", Context.MODE_PRIVATE) }
     val player = remember { ExoPlayer.Builder(context).build() }
     val recorder = remember { Recorder() }
-    DisposableEffect(Unit) {
-        onDispose {
-            recorder.stop()
-            player.release()
-        }
+    val recDir = remember {
+        (context.getExternalFilesDir("Recordings") ?: context.filesDir).also { it.mkdirs() }
     }
+    DisposableEffect(Unit) {
+        onDispose { player.release() }
+    }
+
+    val permLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
 
     var link by remember { mutableStateOf(prefs.getString("link", "") ?: "") }
     var channels by remember { mutableStateOf(listOf<Channel>()) }
@@ -91,11 +104,20 @@ fun IptvApp() {
     var query by remember { mutableStateOf("") }
     var fullscreen by remember { mutableStateOf(false) }
     var group by remember { mutableStateOf("All") }
+    var tab by remember { mutableStateOf(0) }
     var recording by remember { mutableStateOf(false) }
     var recSeconds by remember { mutableStateOf(0) }
     var recName by remember { mutableStateOf("") }
+    var currentRecFile by remember { mutableStateOf<File?>(null) }
+    var recFiles by remember { mutableStateOf(listOf<File>()) }
     var favs by remember {
         mutableStateOf((prefs.getStringSet("favs", emptySet()) ?: emptySet()).toSet())
+    }
+
+    fun refreshRecs() {
+        recFiles = (recDir.listFiles() ?: emptyArray())
+            .filter { it.isFile && it.extension == "ts" }
+            .sortedByDescending { it.lastModified() }
     }
 
     fun toggleFav(url: String) {
@@ -126,14 +148,25 @@ fun IptvApp() {
             recorder.stop()
             return
         }
-        val dir = context.getExternalFilesDir("Recordings") ?: context.filesDir
-        dir.mkdirs()
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(
+                context, Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            permLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         val safe = ch.name.replace(Regex("[^A-Za-z0-9]+"), "_").take(30)
-        val file = java.io.File(dir, "${safe}_${System.currentTimeMillis()}.ts")
+        val file = File(recDir, "${safe}_${System.currentTimeMillis()}.ts")
         recName = ch.name
+        currentRecFile = file
         recording = true
+        ContextCompat.startForegroundService(
+            context, Intent(context, RecordService::class.java)
+        )
         recorder.start(ch.url, file) { error ->
             recording = false
+            currentRecFile = null
+            context.stopService(Intent(context, RecordService::class.java))
             status = if (error == null) {
                 "Saved: ${file.name}"
             } else {
@@ -142,7 +175,13 @@ fun IptvApp() {
         }
     }
 
+    fun playFile(f: File) {
+        selected = Channel(f.name, Uri.fromFile(f).toString(), "", "")
+    }
+
     LaunchedEffect(Unit) { loadLink() }
+
+    LaunchedEffect(recording, tab) { refreshRecs() }
 
     LaunchedEffect(recording) {
         recSeconds = 0
@@ -252,65 +291,104 @@ fun IptvApp() {
             }
         }
 
-        OutlinedTextField(
-            value = link,
-            onValueChange = { link = it },
-            label = { Text("M3U link yahan daalo") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Button(
-            onClick = { loadLink() },
-            modifier = Modifier.padding(vertical = 8.dp)
-        ) { Text("Load karo") }
-
-        Text(status)
-
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            label = { Text("Channel search") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-        )
-
-        LazyRow(Modifier.padding(bottom = 8.dp)) {
-            items(groups) { g ->
-                FilterChip(
-                    selected = group == g,
-                    onClick = { group = g },
-                    label = { Text(if (g == "Favorites") "★ Favorites" else g) },
-                    modifier = Modifier.padding(end = 6.dp)
-                )
-            }
+        TabRow(selectedTabIndex = tab) {
+            Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Channels") })
+            Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Recordings") })
         }
 
-        LazyColumn {
-            items(filtered) { ch ->
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable { selected = ch }
-                        .padding(vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (ch.logo.isNotBlank()) {
-                        AsyncImage(
-                            model = ch.logo,
-                            contentDescription = ch.name,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.size(48.dp).padding(end = 8.dp)
-                        )
-                    } else {
-                        Spacer(Modifier.size(48.dp))
-                    }
-                    Text(ch.name, Modifier.weight(1f).padding(6.dp))
-                    Text(
-                        if (ch.url in favs) "★" else "☆",
-                        Modifier.clickable { toggleFav(ch.url) }.padding(12.dp)
+        Text(status, Modifier.padding(vertical = 4.dp))
+
+        if (tab == 0) {
+            OutlinedTextField(
+                value = link,
+                onValueChange = { link = it },
+                label = { Text("M3U link yahan daalo") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Button(
+                onClick = { loadLink() },
+                modifier = Modifier.padding(vertical = 8.dp)
+            ) { Text("Load karo") }
+
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = { Text("Channel search") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            )
+
+            LazyRow(Modifier.padding(bottom = 8.dp)) {
+                items(groups) { g ->
+                    FilterChip(
+                        selected = group == g,
+                        onClick = { group = g },
+                        label = { Text(if (g == "Favorites") "★ Favorites" else g) },
+                        modifier = Modifier.padding(end = 6.dp)
                     )
                 }
-                HorizontalDivider()
+            }
+
+            LazyColumn {
+                items(filtered) { ch ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { selected = ch }
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (ch.logo.isNotBlank()) {
+                            AsyncImage(
+                                model = ch.logo,
+                                contentDescription = ch.name,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.size(48.dp).padding(end = 8.dp)
+                            )
+                        } else {
+                            Spacer(Modifier.size(48.dp))
+                        }
+                        Text(ch.name, Modifier.weight(1f).padding(6.dp))
+                        Text(
+                            if (ch.url in favs) "★" else "☆",
+                            Modifier.clickable { toggleFav(ch.url) }.padding(12.dp)
+                        )
+                    }
+                    HorizontalDivider()
+                }
+            }
+        } else {
+            if (recFiles.isEmpty()) {
+                Text("Abhi koi recording nahi hai", Modifier.padding(16.dp))
+            }
+            LazyColumn {
+                items(recFiles) { f ->
+                    val isActive = recording && f == currentRecFile
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { playFile(f) }
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f).padding(6.dp)) {
+                            Text(f.name)
+                            Text(
+                                if (isActive) "Recording chal rahi hai..."
+                                else "%.1f MB".format(f.length() / 1048576.0)
+                            )
+                        }
+                        TextButton(
+                            onClick = {
+                                f.delete()
+                                refreshRecs()
+                            },
+                            enabled = !isActive
+                        ) { Text("Delete") }
+                    }
+                    HorizontalDivider()
+                }
             }
         }
     }
