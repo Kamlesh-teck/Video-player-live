@@ -345,23 +345,51 @@ fun IptvApp() {
     }
     val showRetryButton = playError != null && retryCount > 3
 
-    if (fullscreen && selected != null) {
+        if (fullscreen && selected != null) {
+        LaunchedEffect(Unit) { showControls = true }
+        LaunchedEffect(showControls) {
+            if (showControls) {
+                delay(4000)
+                showControls = false
+            }
+        }
         Box(Modifier.fillMaxSize()) {
             AndroidView(
-                factory = { PlayerView(it).apply { this.player = player } },
+                factory = { PlayerView(it).apply { this.player = player; useController = false } },
                 modifier = Modifier.fillMaxSize()
+            )
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectTapGestures { showControls = !showControls }
+                    }
             )
             if (buffering) {
                 CircularProgressIndicator(Modifier.align(Alignment.Center))
             }
-            Row(
-                Modifier.padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(onClick = { fullscreen = false }) { Text("Exit") }
-                Button(onClick = { move(-1) }) { Text("⏮") }
-                Button(onClick = { move(1) }) { Text("⏭") }
-                Button(onClick = { toggleRecord() }) { Text(recLabel) }
+            if (showControls) {
+                Column(
+                    Modifier.align(Alignment.CenterEnd).padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { fullscreen = false },
+                        contentPadding = PaddingValues(horizontal = 10.dp)
+                    ) { Text("Exit") }
+                    Button(
+                        onClick = { move(-1); showControls = true },
+                        contentPadding = PaddingValues(horizontal = 10.dp)
+                    ) { Text("⏮") }
+                    Button(
+                        onClick = { move(1); showControls = true },
+                        contentPadding = PaddingValues(horizontal = 10.dp)
+                    ) { Text("⏭") }
+                    Button(
+                        onClick = { toggleRecord(); showControls = true },
+                        contentPadding = PaddingValues(horizontal = 10.dp)
+                    ) { Text(recLabel) }
+                }
             }
             if (errorText != null) {
                 Row(
@@ -377,7 +405,7 @@ fun IptvApp() {
             }
         }
         return
-    }
+        }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(8.dp)) {
         if (selected != null) {
