@@ -416,7 +416,14 @@ fun IptvApp() {
             Button(
                 onClick = { loadLink() },
                 modifier = Modifier.padding(vertical = 8.dp)
-            ) { Text("Load karo") }
+            ) { Text("Load karo") }          
+            
+            if (favs.isNotEmpty()) {
+                Button(
+                    onClick = { exportLauncher.launch("favorites.m3u") },
+                    modifier = Modifier.padding(bottom = 8.dp)
+                ) { Text("★ Favorites export (M3U)") }
+            }
 
             OutlinedTextField(
                 value = query,
