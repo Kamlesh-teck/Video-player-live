@@ -138,6 +138,28 @@ fun IptvApp() {
     var favs by remember {
         mutableStateOf((prefs.getStringSet("favs", emptySet()) ?: emptySet()).toSet())
     }
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("audio/x-mpegurl")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val list = channels.filter { it.url in favs }
+            val sb = StringBuilder("#EXTM3U\n")
+            for (c in list) {
+                val g = c.group.replace("\"", "'")
+                val l = c.logo.replace("\"", "'")
+                sb.append("#EXTINF:-1 tvg-logo=\"$l\" group-title=\"$g\",${c.name}\n")
+                sb.append(c.url).append("\n")
+            }
+            try {
+                context.contentResolver.openOutputStream(uri)?.use {
+                    it.write(sb.toString().toByteArray())
+                }
+                status = "${list.size} favorites export ho gaye"
+            } catch (e: Exception) {
+                status = "Export error: ${e.message}"
+            }
+        }
+        }
 
     fun refreshRecs() {
         recFiles = (recDir.listFiles() ?: emptyArray())
