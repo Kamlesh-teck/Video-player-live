@@ -150,7 +150,7 @@ fun IptvApp() {
                 sb.append("#EXTINF:-1 tvg-logo=\"$l\" group-title=\"$g\",${c.name}\n")
                 sb.append(c.url).append("\n")
             }
-            val importLauncher = rememberLauncherForActivityResult(
+    val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
