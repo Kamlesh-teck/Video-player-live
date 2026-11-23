@@ -77,12 +77,13 @@ fun parseM3u(text: String): List<Channel> {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent {
-          MaterialTheme(
+                setContent {
+            MaterialTheme(
                 colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
             ) {
                 Surface(Modifier.fillMaxSize()) { IptvApp() }
             }
+        }
     }
 }
 
