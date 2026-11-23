@@ -431,7 +431,7 @@ fun IptvApp() {
 
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(8.dp)) {
         if (selected != null) {
-            Box(Modifier.fillMaxWidth().height(180.dp)) {
+            Box(Modifier.fillMaxWidth().height(220.dp)) {
                 AndroidView(
                     factory = { PlayerView(it).apply { this.player = player } },
                     modifier = Modifier.fillMaxSize()
