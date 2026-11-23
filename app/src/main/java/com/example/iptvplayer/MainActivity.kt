@@ -525,7 +525,14 @@ fun IptvApp() {
                 }
             }
             Button(
-                onClick = { loadLink() },
+                onClick = {
+                    val u = link.trim()
+                    if (u.isNotEmpty()) {
+                        val n = plName.trim().ifEmpty { "Playlist ${playlists.size + 1}" }
+                        savePlaylists(playlists.filter { it.second != u } + (n to u))
+                    }
+                    loadLink()
+                }, 
                 modifier = Modifier.padding(vertical = 8.dp)
             ) { Text("Load karo") }
 
