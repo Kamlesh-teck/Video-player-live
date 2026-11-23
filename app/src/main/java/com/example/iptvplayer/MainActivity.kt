@@ -1,4 +1,4 @@
-hipackage com.example.iptvplayer
+package com.example.iptvplayer
 
 import android.Manifest
 import android.content.Context
