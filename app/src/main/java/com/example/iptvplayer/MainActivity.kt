@@ -8,15 +8,15 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -25,6 +25,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -34,15 +35,16 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
-import coil.compose.AsyncImage
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
+import androidx.media3.ui.PlayerView
+import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import java.io.File
 import java.net.URL
@@ -81,7 +83,7 @@ fun parseM3u(text: String): List<Channel> {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-                setContent {
+        setContent {
             MaterialTheme(
                 colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
             ) {
@@ -141,6 +143,7 @@ fun IptvApp() {
     var fullscreen by remember { mutableStateOf(false) }
     var group by remember { mutableStateOf("All") }
     var tab by remember { mutableStateOf(0) }
+    var showControls by remember { mutableStateOf(true) }
     var showSettings by remember { mutableStateOf(false) }
     var plName by remember { mutableStateOf("") }
     var playlists by remember {
@@ -151,7 +154,6 @@ fun IptvApp() {
                 .map { it.substringBefore("|") to it.substringAfter("|") }
         )
     }
-    var showControls by remember { mutableStateOf(true ) }
     var recording by remember { mutableStateOf(false) }
     var recSeconds by remember { mutableStateOf(0) }
     var recName by remember { mutableStateOf("") }
@@ -203,6 +205,26 @@ fun IptvApp() {
             }.start()
         }
     }
+
+    var pendingSave by remember { mutableStateOf<File?>(null) }
+    val saveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("video/mp2t")
+    ) { uri: Uri? ->
+        val src = pendingSave
+        if (uri != null && src != null) {
+            Thread {
+                try {
+                    context.contentResolver.openOutputStream(uri)?.use { o ->
+                        src.inputStream().use { it.copyTo(o) }
+                    }
+                    status = "Save ho gayi (.ts)"
+                } catch (e: Exception) {
+                    status = "Save error: ${e.message}"
+                }
+            }.start()
+        }
+    }
+
     var pendingMp4 by remember { mutableStateOf<File?>(null) }
     val mp4Launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("video/mp4")
@@ -213,6 +235,7 @@ fun IptvApp() {
             val tmp = File(context.cacheDir, "conv.mp4")
             tmp.delete()
             val t = Transformer.Builder(context)
+                .setAudioMimeType(MimeTypes.AUDIO_AAC)
                 .addListener(object : Transformer.Listener {
                     override fun onCompleted(
                         composition: Composition,
@@ -243,18 +266,20 @@ fun IptvApp() {
             t.start(MediaItem.fromUri(Uri.fromFile(src)), tmp.absolutePath)
         }
     }
+
     fun refreshRecs() {
         recFiles = (recDir.listFiles() ?: emptyArray())
             .filter { it.isFile && it.extension == "ts" }
             .sortedByDescending { it.lastModified() }
     }
+
     fun savePlaylists(list: List<Pair<String, String>>) {
         playlists = list
         prefs.edit().putString(
             "playlists",
             list.joinToString("\n") { it.first + "|" + it.second }
         ).apply()
-        }
+    }
 
     fun toggleFav(url: String) {
         val updated = if (url in favs) favs - url else favs + url
@@ -345,6 +370,15 @@ fun IptvApp() {
         }
     }
 
+    DisposableEffect(selected != null) {
+        if (selected != null) {
+            activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
     LaunchedEffect(selected) {
         selected?.let {
             playError = null
@@ -410,7 +444,7 @@ fun IptvApp() {
     }
     val showRetryButton = playError != null && retryCount > 3
 
-        if (fullscreen && selected != null) {
+    if (fullscreen && selected != null) {
         LaunchedEffect(Unit) { showControls = true }
         LaunchedEffect(showControls) {
             if (showControls) {
@@ -470,7 +504,7 @@ fun IptvApp() {
             }
         }
         return
-        }
+    }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(8.dp)) {
         if (selected != null) {
@@ -536,72 +570,74 @@ fun IptvApp() {
                 onClick = { showSettings = !showSettings },
                 modifier = Modifier.padding(bottom = 4.dp)
             ) { Text(if (showSettings) "▲ Settings band karo" else "⚙ Playlist / Settings") }
+
             if (showSettings) {
-            OutlinedTextField(
-                value = link,
-                onValueChange = { link = it },
-                label = { Text("M3U link yahan daalo") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = plName,
-                onValueChange = { plName = it },
-                label = { Text("Playlist ka naam (optional)") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            )
-            if (playlists.isNotEmpty()) {
-                Text("Saved playlists", Modifier.padding(top = 8.dp))
-                LazyRow {
-                    items(playlists) { p ->
-                        InputChip(
-                            selected = link == p.second,
-                            onClick = {
-                                link = p.second
-                                plName = p.first
-                                loadLink()
-                            },
-                            label = { Text(p.first) },
-                            trailingIcon = {
-                                Text(
-                                    "✕",
-                                    Modifier
-                                        .clickable {
-                                            savePlaylists(playlists.filter { it != p })
-                                        }
-                                        .padding(start = 4.dp)
-                                )
-                            },
-                            modifier = Modifier.padding(end = 6.dp)
-                        )
+                OutlinedTextField(
+                    value = link,
+                    onValueChange = { link = it },
+                    label = { Text("M3U link yahan daalo") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = plName,
+                    onValueChange = { plName = it },
+                    label = { Text("Playlist ka naam (optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+                if (playlists.isNotEmpty()) {
+                    Text("Saved playlists", Modifier.padding(top = 8.dp))
+                    LazyRow {
+                        items(playlists) { p ->
+                            InputChip(
+                                selected = link == p.second,
+                                onClick = {
+                                    link = p.second
+                                    plName = p.first
+                                    loadLink()
+                                },
+                                label = { Text(p.first) },
+                                trailingIcon = {
+                                    Text(
+                                        "✕",
+                                        Modifier
+                                            .clickable {
+                                                savePlaylists(playlists.filter { it != p })
+                                            }
+                                            .padding(start = 4.dp)
+                                    )
+                                },
+                                modifier = Modifier.padding(end = 6.dp)
+                            )
+                        }
                     }
                 }
-            }
-            Button(
-                onClick = {
-                    val u = link.trim()
-                    if (u.isNotEmpty()) {
-                        val n = plName.trim().ifEmpty { "Playlist ${playlists.size + 1}" }
-                        savePlaylists(playlists.filter { it.second != u } + (n to u))
-                    }
-                    loadLink()
-                }, 
-                modifier = Modifier.padding(vertical = 8.dp)
-            ) { Text("Load karo") }
-
-            Button(
-                onClick = { importLauncher.launch("*/*") },
-                modifier = Modifier.padding(bottom = 8.dp)
-            ) { Text("📁 File se load karo (M3U)") }
-
-            if (favs.isNotEmpty()) {
                 Button(
-                    onClick = { exportLauncher.launch("favorites.m3u") },
+                    onClick = {
+                        val u = link.trim()
+                        if (u.isNotEmpty()) {
+                            val n = plName.trim().ifEmpty { "Playlist ${playlists.size + 1}" }
+                            savePlaylists(playlists.filter { it.second != u } + (n to u))
+                        }
+                        loadLink()
+                    },
+                    modifier = Modifier.padding(vertical = 8.dp)
+                ) { Text("Load karo") }
+
+                Button(
+                    onClick = { importLauncher.launch("*/*") },
                     modifier = Modifier.padding(bottom = 8.dp)
-                ) { Text("★ Favorites export (M3U)") }
+                ) { Text("📁 File se load karo (M3U)") }
+
+                if (favs.isNotEmpty()) {
+                    Button(
+                        onClick = { exportLauncher.launch("favorites.m3u") },
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    ) { Text("★ Favorites export (M3U)") }
+                }
             }
-            }
+
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -669,20 +705,30 @@ fun IptvApp() {
                                 if (isActive) "Recording chal rahi hai..."
                                 else "%.1f MB".format(f.length() / 1048576.0)
                             )
-                        }                       
+                        }
+                        TextButton(
+                            onClick = {
+                                pendingSave = f
+                                saveLauncher.launch(f.name)
+                            },
+                            enabled = !isActive,
+                            contentPadding = PaddingValues(horizontal = 6.dp)
+                        ) { Text("Save") }
                         TextButton(
                             onClick = {
                                 pendingMp4 = f
                                 mp4Launcher.launch(f.nameWithoutExtension + ".mp4")
                             },
-                            enabled = !isActive
+                            enabled = !isActive,
+                            contentPadding = PaddingValues(horizontal = 6.dp)
                         ) { Text("MP4") }
                         TextButton(
                             onClick = {
                                 f.delete()
                                 refreshRecs()
                             },
-                            enabled = !isActive
+                            enabled = !isActive,
+                            contentPadding = PaddingValues(horizontal = 6.dp)
                         ) { Text("Delete") }
                     }
                     HorizontalDivider()
