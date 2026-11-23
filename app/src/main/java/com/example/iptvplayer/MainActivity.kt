@@ -1,4 +1,4 @@
-package com.example.iptvplayer
+hipackage com.example.iptvplayer
 
 import android.Manifest
 import android.content.Context
@@ -150,6 +150,25 @@ fun IptvApp() {
                 sb.append("#EXTINF:-1 tvg-logo=\"$l\" group-title=\"$g\",${c.name}\n")
                 sb.append(c.url).append("\n")
             }
+            val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            Thread {
+                try {
+                    val text = context.contentResolver.openInputStream(uri)
+                        ?.bufferedReader()?.use { it.readText() } ?: ""
+                    val result = parseM3u(text)
+                    File(context.filesDir, "local.m3u").writeText(text)
+                    prefs.edit().putBoolean("useFile", true).apply()
+                    channels = result
+                    status = "File se ${result.size} channels mile"
+                } catch (e: Exception) {
+                    status = "File error: ${e.message}"
+                }
+            }.start()
+        }
+                }
             try {
                 context.contentResolver.openOutputStream(uri)?.use {
                     it.write(sb.toString().toByteArray())
@@ -177,6 +196,7 @@ fun IptvApp() {
         val url = link.trim()
         if (url.isEmpty()) return
         prefs.edit().putString("link", url).apply()
+        prefs.edit().putBoolean("useFile", false).apply()
         status = "Load ho raha hai..."
         Thread {
             try {
@@ -235,17 +255,15 @@ fun IptvApp() {
         player.playWhenReady = true
     }
 
-    LaunchedEffect(Unit) { loadLink() }
-
-    LaunchedEffect(recording, tab) { refreshRecs() }
-
-    LaunchedEffect(recording) {
-        recSeconds = 0
-        while (recording) {
-            delay(1000)
-            recSeconds++
+     LaunchedEffect(Unit) {
+        val f = File(context.filesDir, "local.m3u")
+        if (prefs.getBoolean("useFile", false) && f.exists()) {
+            channels = parseM3u(f.readText())
+            status = "${channels.size} channels (saved file)"
+        } else {
+            loadLink()
         }
-    }
+        }
 
     LaunchedEffect(selected) {
         selected?.let {
@@ -417,7 +435,10 @@ fun IptvApp() {
                 onClick = { loadLink() },
                 modifier = Modifier.padding(vertical = 8.dp)
             ) { Text("Load karo") }          
-            
+                Button(
+                onClick = { importLauncher.launch("*/*") },
+                modifier = Modifier.padding(bottom = 8.dp)
+            ) { Text("📁 File se load karo (M3U)") }
             if (favs.isNotEmpty()) {
                 Button(
                     onClick = { exportLauncher.launch("favorites.m3u") },
