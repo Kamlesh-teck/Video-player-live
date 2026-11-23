@@ -39,6 +39,10 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
+import androidx.media3.transformer.Composition
+import androidx.media3.transformer.ExportException
+import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.Transformer
 import kotlinx.coroutines.delay
 import java.io.File
 import java.net.URL
@@ -87,7 +91,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.media3.common.util.UnstableApi::class)
 @Composable
 fun IptvApp() {
     val context = LocalContext.current
