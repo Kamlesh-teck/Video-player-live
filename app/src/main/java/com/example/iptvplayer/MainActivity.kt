@@ -132,7 +132,7 @@ fun IptvApp() {
     var fullscreen by remember { mutableStateOf(false) }
     var group by remember { mutableStateOf("All") }
     var tab by remember { mutableStateOf(0) }
-    var showControls by remem ber { mutableStateOf(true ) }
+    var showControls by remember { mutableStateOf(true ) }
     var recording by remember { mutableStateOf(false) }
     var recSeconds by remember { mutableStateOf(0) }
     var recName by remember { mutableStateOf("") }
