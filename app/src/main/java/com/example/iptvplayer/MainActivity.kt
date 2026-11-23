@@ -138,6 +138,7 @@ fun IptvApp() {
     var favs by remember {
         mutableStateOf((prefs.getStringSet("favs", emptySet()) ?: emptySet()).toSet())
     }
+
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("audio/x-mpegurl")
     ) { uri: Uri? ->
@@ -150,6 +151,17 @@ fun IptvApp() {
                 sb.append("#EXTINF:-1 tvg-logo=\"$l\" group-title=\"$g\",${c.name}\n")
                 sb.append(c.url).append("\n")
             }
+            try {
+                context.contentResolver.openOutputStream(uri)?.use {
+                    it.write(sb.toString().toByteArray())
+                }
+                status = "${list.size} favorites export ho gaye"
+            } catch (e: Exception) {
+                status = "Export error: ${e.message}"
+            }
+        }
+    }
+
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -168,17 +180,7 @@ fun IptvApp() {
                 }
             }.start()
         }
-                }
-            try {
-                context.contentResolver.openOutputStream(uri)?.use {
-                    it.write(sb.toString().toByteArray())
-                }
-                status = "${list.size} favorites export ho gaye"
-            } catch (e: Exception) {
-                status = "Export error: ${e.message}"
-            }
-        }
-        }
+    }
 
     fun refreshRecs() {
         recFiles = (recDir.listFiles() ?: emptyArray())
@@ -255,7 +257,7 @@ fun IptvApp() {
         player.playWhenReady = true
     }
 
-     LaunchedEffect(Unit) {
+    LaunchedEffect(Unit) {
         val f = File(context.filesDir, "local.m3u")
         if (prefs.getBoolean("useFile", false) && f.exists()) {
             channels = parseM3u(f.readText())
@@ -263,7 +265,17 @@ fun IptvApp() {
         } else {
             loadLink()
         }
+    }
+
+    LaunchedEffect(recording, tab) { refreshRecs() }
+
+    LaunchedEffect(recording) {
+        recSeconds = 0
+        while (recording) {
+            delay(1000)
+            recSeconds++
         }
+    }
 
     LaunchedEffect(selected) {
         selected?.let {
@@ -434,11 +446,13 @@ fun IptvApp() {
             Button(
                 onClick = { loadLink() },
                 modifier = Modifier.padding(vertical = 8.dp)
-            ) { Text("Load karo") }          
-                Button(
+            ) { Text("Load karo") }
+
+            Button(
                 onClick = { importLauncher.launch("*/*") },
                 modifier = Modifier.padding(bottom = 8.dp)
             ) { Text("📁 File se load karo (M3U)") }
+
             if (favs.isNotEmpty()) {
                 Button(
                     onClick = { exportLauncher.launch("favorites.m3u") },
