@@ -14,6 +14,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.*
@@ -77,8 +78,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme { IptvApp() }
-        }
+          MaterialTheme(
+                colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
+            ) {
+                Surface(Modifier.fillMaxSize()) { IptvApp() }
+            }
     }
 }
 
@@ -426,7 +430,7 @@ fun IptvApp() {
 
     Column(Modifier.fillMaxSize().statusBarsPadding().padding(8.dp)) {
         if (selected != null) {
-            Box(Modifier.fillMaxWidth().height(220.dp)) {
+            Box(Modifier.fillMaxWidth().height(180.dp)) {
                 AndroidView(
                     factory = { PlayerView(it).apply { this.player = player } },
                     modifier = Modifier.fillMaxSize()
