@@ -51,4 +51,5 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-hls:1.4.0")
     implementation("androidx.media3:media3-ui:1.4.0")
     implementation("io.coil-kt:coil-compose:2.6.0")
+    implementation("androidx.media3:media3-transformer:1.4.0")
 }
