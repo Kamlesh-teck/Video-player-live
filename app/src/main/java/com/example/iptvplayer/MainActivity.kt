@@ -132,6 +132,15 @@ fun IptvApp() {
     var fullscreen by remember { mutableStateOf(false) }
     var group by remember { mutableStateOf("All") }
     var tab by remember { mutableStateOf(0) }
+    var plName by remember { mutableStateOf("") }
+    var playlists by remember {
+        mutableStateOf(
+            (prefs.getString("playlists", "") ?: "")
+                .split("\n")
+                .filter { it.contains("|") }
+                .map { it.substringBefore("|") to it.substringAfter("|") }
+        )
+    }
     var showControls by remember { mutableStateOf(true ) }
     var recording by remember { mutableStateOf(false) }
     var recSeconds by remember { mutableStateOf(0) }
@@ -190,6 +199,13 @@ fun IptvApp() {
             .filter { it.isFile && it.extension == "ts" }
             .sortedByDescending { it.lastModified() }
     }
+    fun savePlaylists(list: List<Pair<String, String>>) {
+        playlists = list
+        prefs.edit().putString(
+            "playlists",
+            list.joinToString("\n") { it.first + "|" + it.second }
+        ).apply()
+        }
 
     fun toggleFav(url: String) {
         val updated = if (url in favs) favs - url else favs + url
@@ -474,6 +490,40 @@ fun IptvApp() {
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
+            OutlinedTextField(
+                value = plName,
+                onValueChange = { plName = it },
+                label = { Text("Playlist ka naam (optional)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+            if (playlists.isNotEmpty()) {
+                Text("Saved playlists", Modifier.padding(top = 8.dp))
+                LazyRow {
+                    items(playlists) { p ->
+                        InputChip(
+                            selected = link == p.second,
+                            onClick = {
+                                link = p.second
+                                plName = p.first
+                                loadLink()
+                            },
+                            label = { Text(p.first) },
+                            trailingIcon = {
+                                Text(
+                                    "✕",
+                                    Modifier
+                                        .clickable {
+                                            savePlaylists(playlists.filter { it != p })
+                                        }
+                                        .padding(start = 4.dp)
+                                )
+                            },
+                            modifier = Modifier.padding(end = 6.dp)
+                        )
+                    }
+                }
+            }
             Button(
                 onClick = { loadLink() },
                 modifier = Modifier.padding(vertical = 8.dp)
