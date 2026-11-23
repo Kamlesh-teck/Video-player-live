@@ -203,7 +203,46 @@ fun IptvApp() {
             }.start()
         }
     }
+    var pendingMp4 by remember { mutableStateOf<File?>(null) }
+    val mp4Launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("video/mp4")
+    ) { uri: Uri? ->
+        val src = pendingMp4
+        if (uri != null && src != null) {
+            status = "MP4 ban rahi hai..."
+            val tmp = File(context.cacheDir, "conv.mp4")
+            tmp.delete()
+            val t = Transformer.Builder(context)
+                .addListener(object : Transformer.Listener {
+                    override fun onCompleted(
+                        composition: Composition,
+                        exportResult: ExportResult
+                    ) {
+                        Thread {
+                            try {
+                                context.contentResolver.openOutputStream(uri)?.use { o ->
+                                    tmp.inputStream().use { it.copyTo(o) }
+                                }
+                                tmp.delete()
+                                status = "MP4 save ho gayi"
+                            } catch (e: Exception) {
+                                status = "MP4 error: ${e.message}"
+                            }
+                        }.start()
+                    }
 
+                    override fun onError(
+                        composition: Composition,
+                        exportResult: ExportResult,
+                        exportException: ExportException
+                    ) {
+                        status = "MP4 error: ${exportException.message}"
+                    }
+                })
+                .build()
+            t.start(MediaItem.fromUri(Uri.fromFile(src)), tmp.absolutePath)
+        }
+    }
     fun refreshRecs() {
         recFiles = (recDir.listFiles() ?: emptyArray())
             .filter { it.isFile && it.extension == "ts" }
