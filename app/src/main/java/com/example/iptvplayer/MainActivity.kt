@@ -132,6 +132,7 @@ fun IptvApp() {
     var fullscreen by remember { mutableStateOf(false) }
     var group by remember { mutableStateOf("All") }
     var tab by remember { mutableStateOf(0) }
+    var showSettings by remember { mutableStateOf(false) }
     var plName by remember { mutableStateOf("") }
     var playlists by remember {
         mutableStateOf(
@@ -483,6 +484,11 @@ fun IptvApp() {
         Text(status, Modifier.padding(vertical = 4.dp))
 
         if (tab == 0) {
+            Button(
+                onClick = { showSettings = !showSettings },
+                modifier = Modifier.padding(bottom = 4.dp)
+            ) { Text(if (showSettings) "▲ Settings band karo" else "⚙ Playlist / Settings") }
+            if (showSettings) {
             OutlinedTextField(
                 value = link,
                 onValueChange = { link = it },
@@ -547,7 +553,7 @@ fun IptvApp() {
                     modifier = Modifier.padding(bottom = 8.dp)
                 ) { Text("★ Favorites export (M3U)") }
             }
-
+            }
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
