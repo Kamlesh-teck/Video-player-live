@@ -412,6 +412,15 @@ fun IptvApp() {
 
     BackHandler(enabled = fullscreen) { fullscreen = false }
 
+    BackHandler(enabled = !fullscreen && (selected != null || tab == 1)) {
+        if (tab == 1) {
+            tab = 0
+        } else {
+            player.stop()
+            selected = null
+        }
+    }
+
     val groups = listOf("All", "Favorites") +
         channels.map { it.group }.filter { it.isNotBlank() }.distinct().sorted()
 
@@ -517,7 +526,34 @@ fun IptvApp() {
                     CircularProgressIndicator(Modifier.align(Alignment.Center))
                 }
             }
-            Text(selected!!.name, Modifier.padding(vertical = 4.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    selected!!.name,
+                    Modifier.weight(1f),
+                    maxLines = 1,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                TextButton(
+                    onClick = { move(-1) },
+                    modifier = Modifier.size(40.dp),
+                    contentPadding = PaddingValues(0.dp)
+                ) { Text("⏮") }
+                TextButton(
+                    onClick = { toggleRecord() },
+                    modifier = Modifier.height(40.dp),
+                    contentPadding = PaddingValues(horizontal = 6.dp)
+                ) { Text(recLabel) }
+                TextButton(
+                    onClick = { move(1) },
+                    modifier = Modifier.size(40.dp),
+                    contentPadding = PaddingValues(0.dp)
+                ) { Text("⏭") }
+                TextButton(
+                    onClick = { fullscreen = true },
+                    modifier = Modifier.height(40.dp),
+                    contentPadding = PaddingValues(horizontal = 6.dp)
+                ) { Text("Full") }
+            }
             if (errorText != null) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -532,29 +568,8 @@ fun IptvApp() {
                     }
                 }
             }
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Button(
-                    onClick = { move(-1) },
-                    contentPadding = PaddingValues(horizontal = 8.dp)
-                ) { Text("⏮") }
-                Button(
-                    onClick = { toggleRecord() },
-                    contentPadding = PaddingValues(horizontal = 8.dp)
-                ) { Text(recLabel) }
-                Button(
-                    onClick = { move(1) },
-                    contentPadding = PaddingValues(horizontal = 8.dp)
-                ) { Text("⏭") }
-                Button(
-                    onClick = { fullscreen = true },
-                    contentPadding = PaddingValues(horizontal = 8.dp)
-                ) { Text("Full") }
-            }
             if (recording) {
-                Text("Recording: $recName")
+                Text("Recording: $recName", style = MaterialTheme.typography.bodySmall)
             }
         }
 
@@ -563,13 +578,21 @@ fun IptvApp() {
             Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Recordings") })
         }
 
-        Text(status, Modifier.padding(vertical = 4.dp))
+        Text(status, style = MaterialTheme.typography.bodySmall)
 
         if (tab == 0) {
-            Button(
-                onClick = { showSettings = !showSettings },
-                modifier = Modifier.padding(bottom = 4.dp)
-            ) { Text(if (showSettings) "▲ Settings band karo" else "⚙ Playlist / Settings") }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = { Text("Search") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = { showSettings = !showSettings }) {
+                    Text(if (showSettings) "✕" else "⚙")
+                }
+            }
 
             if (showSettings) {
                 OutlinedTextField(
@@ -638,15 +661,7 @@ fun IptvApp() {
                 }
             }
 
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                label = { Text("Channel search") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-            )
-
-            LazyRow(Modifier.padding(bottom = 8.dp)) {
+            LazyRow(Modifier.padding(bottom = 2.dp)) {
                 items(groups) { g ->
                     FilterChip(
                         selected = group == g,
@@ -663,7 +678,7 @@ fun IptvApp() {
                         Modifier
                             .fillMaxWidth()
                             .clickable { selected = ch }
-                            .padding(vertical = 6.dp),
+                            .padding(vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (ch.logo.isNotBlank()) {
@@ -671,15 +686,19 @@ fun IptvApp() {
                                 model = ch.logo,
                                 contentDescription = ch.name,
                                 contentScale = ContentScale.Fit,
-                                modifier = Modifier.size(48.dp).padding(end = 8.dp)
+                                modifier = Modifier.size(36.dp).padding(end = 8.dp)
                             )
                         } else {
-                            Spacer(Modifier.size(48.dp))
+                            Spacer(Modifier.size(36.dp))
                         }
-                        Text(ch.name, Modifier.weight(1f).padding(6.dp))
+                        Text(
+                            ch.name,
+                            Modifier.weight(1f).padding(4.dp),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                         Text(
                             if (ch.url in favs) "★" else "☆",
-                            Modifier.clickable { toggleFav(ch.url) }.padding(12.dp)
+                            Modifier.clickable { toggleFav(ch.url) }.padding(8.dp)
                         )
                     }
                     HorizontalDivider()
@@ -696,7 +715,7 @@ fun IptvApp() {
                         Modifier
                             .fillMaxWidth()
                             .clickable { playFile(f) }
-                            .padding(vertical = 6.dp),
+                            .padding(vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f).padding(6.dp)) {
